@@ -1,0 +1,310 @@
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator
+from matplotlib.colors import to_rgb
+from matplotlib.patches import Rectangle, Patch
+
+# ============================================================
+# 1. 数据
+# ============================================================
+
+groups = ["RT", "200 °C", "300 °C"]
+materials = ["ACM", "ACM-1TiC", "ACM-2TiC"]
+
+# 每组顺序：ACM, ACM-1TiC, ACM-2TiC
+UTS = {
+    "RT":      np.array([350, 375, 380], dtype=float),
+    "200 °C": np.array([215, 251, 256], dtype=float),
+    "300 °C": np.array([98, 122, 130], dtype=float),
+}
+
+SD = {
+    "RT":      np.array([3.25, 5.54, 3.58], dtype=float),
+    "200 °C": np.array([2.547, 3.963, 5.569], dtype=float),
+    "300 °C": np.array([2.547, 3.963, 2.846], dtype=float),
+}
+
+# 与 Fig. 4(a–c) 一致的配色
+COLORS = {
+    "ACM": "#3d78b1",
+    "ACM-1TiC": "#f6d085",
+    "ACM-2TiC": "#bf2e2b",
+}
+
+# ============================================================
+# 2. 图形参数：与 Fig. 4(d) 统一
+# ============================================================
+
+FIG_WIDTH_MM = 55
+FIG_HEIGHT_MM = 50
+FIGSIZE = (FIG_WIDTH_MM / 25.4, FIG_HEIGHT_MM / 25.4)
+
+DPI = 600
+
+plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams["mathtext.fontset"] = "stix"
+plt.rcParams["pdf.fonttype"] = 42
+plt.rcParams["ps.fonttype"] = 42
+
+AXIS_LABEL_SIZE = 6.2
+TICK_LABEL_SIZE = 5.2
+PANEL_LABEL_SIZE = 6.6
+LEGEND_FONT_SIZE = 4.8
+
+AXIS_LINE_WIDTH = 0.6
+MAJOR_TICK_WIDTH = 0.6
+MINOR_TICK_WIDTH = 0.45
+MAJOR_TICK_LENGTH = 2.4
+MINOR_TICK_LENGTH = 1.4
+
+BAR_WIDTH = 0.18
+BAR_GAP = 0.035
+GROUP_GAP = 0.42
+
+ERROR_COLOR = "#303030"
+ERROR_LINEWIDTH = 0.45
+ERROR_CAPSIZE = 1.1
+ERROR_CAPTHICK = 0.45
+
+SHOW_SEPARATOR = True
+SEPARATOR_COLOR = "#d6d6d6"
+SEPARATOR_LINEWIDTH = 0.25
+
+ALPHA_BOTTOM = 0.15
+ALPHA_TOP = 1.0
+
+OUT_DIR = os.path.join(os.getcwd(), "fig4e_gradient_grouped_like_d")
+os.makedirs(OUT_DIR, exist_ok=True)
+
+# ============================================================
+# 3. 渐变柱体函数
+# ============================================================
+
+def gradient_bar(ax, x, height, width, color, bottom=0, zorder=3,
+                 alpha_bottom=ALPHA_BOTTOM, alpha_top=ALPHA_TOP):
+    """
+    绘制与 Fig. 4(d) 一致的渐变柱体。
+    """
+    rgb = np.array(to_rgb(color))
+    white = np.array([1.0, 1.0, 1.0])
+    n = 256
+
+    t = np.linspace(0, 1, n).reshape(n, 1)
+    colors = white * (1 - t) + rgb * t
+    alphas = np.linspace(alpha_bottom, alpha_top, n).reshape(n, 1)
+
+    rgba = np.zeros((n, 1, 4))
+    rgba[:, 0, :3] = colors
+    rgba[:, 0, 3] = alphas[:, 0]
+
+    rect = Rectangle(
+        (x - width / 2, bottom),
+        width,
+        height,
+        facecolor="none",
+        edgecolor="none"
+    )
+    ax.add_patch(rect)
+
+    im = ax.imshow(
+        rgba,
+        extent=(x - width / 2, x + width / 2, bottom, bottom + height),
+        origin="lower",
+        aspect="auto",
+        interpolation="bicubic",
+        zorder=zorder
+    )
+    im.set_clip_path(rect)
+
+    return rect, im
+
+# ============================================================
+# 4. 计算柱体位置：保持和 Fig. 4(d) 一致
+# ============================================================
+
+x_positions = []
+group_centers = []
+current_x = 0.0
+
+for g in range(len(groups)):
+    group_xs = []
+
+    for j in range(3):  # ACM, ACM-1TiC, ACM-2TiC
+        xpos = current_x + j * (BAR_WIDTH + BAR_GAP)
+        x_positions.append(xpos)
+        group_xs.append(xpos)
+
+    group_centers.append(np.mean(group_xs))
+    current_x = group_xs[-1] + BAR_WIDTH + GROUP_GAP
+
+x_positions = np.array(x_positions)
+group_centers = np.array(group_centers)
+
+separator_positions = []
+for g in range(len(groups) - 1):
+    right_group = x_positions[g * 3 + 2] + BAR_WIDTH / 2
+    left_next_group = x_positions[(g + 1) * 3] - BAR_WIDTH / 2
+    separator_positions.append((right_group + left_next_group) / 2)
+
+X_MIN = x_positions[0] - BAR_WIDTH * 1.5
+X_MAX = x_positions[-1] + BAR_WIDTH * 1.5
+
+# ============================================================
+# 5. 画图
+# ============================================================
+
+fig, ax = plt.subplots(figsize=FIGSIZE, dpi=DPI)
+
+for g, group in enumerate(groups):
+    group_values = UTS[group]
+    group_sds = SD[group]
+
+    for j, material in enumerate(materials):
+        xpos = x_positions[g * 3 + j]
+        value = group_values[j]
+        sd = group_sds[j]
+
+        gradient_bar(
+            ax,
+            x=xpos,
+            height=value,
+            width=BAR_WIDTH,
+            color=COLORS[material],
+            zorder=3
+        )
+
+        ax.errorbar(
+            xpos,
+            value,
+            yerr=sd,
+            fmt="none",
+            ecolor=ERROR_COLOR,
+            elinewidth=ERROR_LINEWIDTH,
+            capsize=ERROR_CAPSIZE,
+            capthick=ERROR_CAPTHICK,
+            zorder=5
+        )
+
+# ============================================================
+# 6. 坐标轴设置
+# ============================================================
+
+ax.set_xlim(X_MIN, X_MAX)
+ax.set_ylim(0, 420)
+
+ax.set_xticks(group_centers)
+ax.set_xticklabels(groups, fontsize=TICK_LABEL_SIZE)
+
+ax.set_ylabel("UTS (MPa)", fontsize=AXIS_LABEL_SIZE, labelpad=1.5)
+ax.set_xlabel("")
+
+ax.yaxis.set_major_locator(MultipleLocator(100))
+ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+
+ax.tick_params(
+    axis="both",
+    which="major",
+    labelsize=TICK_LABEL_SIZE,
+    direction="in",
+    width=MAJOR_TICK_WIDTH,
+    length=MAJOR_TICK_LENGTH,
+    top=False,
+    right=False,
+    pad=1.2
+)
+
+ax.tick_params(
+    axis="both",
+    which="minor",
+    direction="in",
+    width=MINOR_TICK_WIDTH,
+    length=MINOR_TICK_LENGTH,
+    top=False,
+    right=False
+)
+
+for spine in ax.spines.values():
+    spine.set_visible(True)
+    spine.set_linewidth(AXIS_LINE_WIDTH)
+
+ax.grid(False)
+
+# ============================================================
+# 7. 分割线
+# ============================================================
+
+if SHOW_SEPARATOR:
+    for sep in separator_positions:
+        ax.axvline(
+            sep,
+            color=SEPARATOR_COLOR,
+            linewidth=SEPARATOR_LINEWIDTH,
+            zorder=1
+        )
+
+# ============================================================
+# 8. panel label
+# ============================================================
+
+ax.text(
+    0.030, 0.975,
+    "(e)",
+    transform=ax.transAxes,
+    ha="left",
+    va="top",
+    fontsize=PANEL_LABEL_SIZE,
+    fontweight="bold"
+)
+
+# ============================================================
+# 9. 右上角实体 legend
+# ============================================================
+
+legend_handles = [
+    Patch(facecolor=COLORS["ACM"], edgecolor="none", label="ACM"),
+    Patch(facecolor=COLORS["ACM-1TiC"], edgecolor="none", label="ACM-1TiC"),
+    Patch(facecolor=COLORS["ACM-2TiC"], edgecolor="none", label="ACM-2TiC"),
+]
+
+ax.legend(
+    handles=legend_handles,
+    loc="upper right",
+    bbox_to_anchor=(0.985, 0.975),
+    frameon=False,
+    fontsize=LEGEND_FONT_SIZE,
+    handlelength=0.9,
+    handleheight=0.55,
+    handletextpad=0.25,
+    borderpad=0.1,
+    labelspacing=0.15
+)
+
+# ============================================================
+# 10. 导出
+# ============================================================
+
+fig.subplots_adjust(
+    left=0.17,
+    right=0.96,
+    bottom=0.16,
+    top=0.96
+)
+
+pdf_path = os.path.join(OUT_DIR, "Fig4e_UTS_gradient_like_d.pdf")
+png_path = os.path.join(OUT_DIR, "Fig4e_UTS_gradient_like_d.png")
+tif_path = os.path.join(OUT_DIR, "Fig4e_UTS_gradient_like_d.tif")
+eps_path = os.path.join(OUT_DIR, "Fig4e_UTS_gradient_like_d.eps")
+
+fig.savefig(pdf_path)
+fig.savefig(png_path, dpi=DPI)
+fig.savefig(tif_path, dpi=DPI)
+fig.savefig(eps_path)
+
+plt.show()
+
+print("Saved to:")
+print(pdf_path)
+print(png_path)
+print(tif_path)
+print(eps_path)
